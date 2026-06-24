@@ -1,0 +1,19 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: oliverlaudan-ops/crows-federation:latest
+    container_name: crows-federation
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+    networks:
+      - web
+
+networks:
+  web:
+    name: web
+    external: true
