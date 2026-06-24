@@ -24,6 +24,10 @@ export interface SchemeDefinition {
   failurePenalty: number;
   /** Base success chance, 0..1 — boosted by shinies invested beyond minimum */
   baseSuccessChance: number;
+  /** Phases of the day during which this scheme can be dispatched. */
+  activePhases: import("./time").DayPhase[];
+  /** Bonus applied to success chance during the *primary* (best) phase. */
+  primaryPhaseBonus?: number;
 }
 
 export const schemes: Record<SchemeId, SchemeDefinition> = {
@@ -36,6 +40,8 @@ export const schemes: Record<SchemeId, SchemeDefinition> = {
     reward: { shinies: [5, 15], secrets: [0, 1] },
     failurePenalty: 0,
     baseSuccessChance: 0.85,
+    activePhases: ["day", "dusk", "dawn"],
+    primaryPhaseBonus: 0.05,
   },
   raid_picnic: {
     id: "raid_picnic",
@@ -46,6 +52,8 @@ export const schemes: Record<SchemeId, SchemeDefinition> = {
     reward: { shinies: [40, 90], secrets: [1, 3] },
     failurePenalty: 1,
     baseSuccessChance: 0.65,
+    activePhases: ["day"],
+    primaryPhaseBonus: 0.1,
   },
   haunt_belfry: {
     id: "haunt_belfry",
@@ -56,6 +64,8 @@ export const schemes: Record<SchemeId, SchemeDefinition> = {
     reward: { shinies: [120, 280], secrets: [3, 8] },
     failurePenalty: 2,
     baseSuccessChance: 0.55,
+    activePhases: ["dusk", "night", "dawn"],
+    primaryPhaseBonus: 0.1,
   },
   steal_owl_egg: {
     id: "steal_owl_egg",
@@ -67,6 +77,8 @@ export const schemes: Record<SchemeId, SchemeDefinition> = {
     reward: { shinies: [800, 1600], secrets: [15, 30] },
     failurePenalty: 5,
     baseSuccessChance: 0.35,
+    activePhases: ["night"],
+    primaryPhaseBonus: 0.1,
   },
 };
 
@@ -91,16 +103,29 @@ export function schemeStartCost(scheme: SchemeDefinition, extraInvestment: numbe
 }
 
 /**
- * Boosted success chance from shinies invested.
+ * Boosted success chance from shinies invested and current phase.
  * Capped at 0.95 — never a certainty.
  */
-export function adjustedChance(scheme: SchemeDefinition, extraInvestment: number): number {
-  const boost = extraInvestment * 0.0025; // 2.5% per extra shiny
-  return Math.min(0.95, scheme.baseSuccessChance + boost);
+export function adjustedChance(
+  scheme: SchemeDefinition,
+  extraInvestment: number,
+  currentPhase: import("./time").DayPhase,
+): number {
+  const investBoost = extraInvestment * 0.0025; // 2.5% per extra shiny
+  const phaseBoost =
+    scheme.primaryPhaseBonus && scheme.activePhases[0] === currentPhase
+      ? scheme.primaryPhaseBonus
+      : 0;
+  return Math.min(0.95, scheme.baseSuccessChance + investBoost + phaseBoost);
 }
 
-export function resolve(scheme: SchemeDefinition, active: ActiveScheme, rand: () => number): SchemeResult {
-  const chance = adjustedChance(scheme, active.invested);
+export function resolve(
+  scheme: SchemeDefinition,
+  active: ActiveScheme,
+  currentPhase: import("./time").DayPhase,
+  rand: () => number,
+): SchemeResult {
+  const chance = adjustedChance(scheme, active.invested, currentPhase);
   const success = rand() < chance;
   if (success) {
     return {

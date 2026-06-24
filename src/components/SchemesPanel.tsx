@@ -2,7 +2,8 @@
 
 import { useGame } from "@/lib/store";
 import { formatDuration } from "@/lib/format";
-import { schemes as schemeDefs, schemeStartCost, type SchemeId } from "@/lib/game/schemes";
+import { schemes as schemeDefs, type SchemeId } from "@/lib/game/schemes";
+import { currentPhase, PHASE_LABELS, type DayPhase } from "@/lib/game/time";
 
 export function SchemesPanel() {
   const state = useGame((s) => s.state);
@@ -13,12 +14,16 @@ export function SchemesPanel() {
     state.unlockedSchemes.includes(s.id),
   );
 
+  // We re-derive the phase from the world clock — same source of truth.
+  // (Reading it on every render keeps the cards in sync with the WorldClock.)
+  const phase: DayPhase = currentPhase(state.world);
+
   return (
     <section className="rounded-lg border border-crow-ash bg-crow-feather/40 p-5">
       <header className="mb-4 flex items-baseline justify-between">
         <h2 className="text-2xl text-crow-bone">Schemes</h2>
         <span className="text-xs uppercase tracking-widest text-crow-boneDim">
-          {running.length} underway
+          {running.length} underway · {PHASE_LABELS[phase]}
         </span>
       </header>
       <div className="grid gap-3 md:grid-cols-2">
@@ -26,11 +31,10 @@ export function SchemesPanel() {
           const active = running.find((r) => r.id === def.id);
           const remaining = active ? active.completesAt - Date.now() : null;
           const canAfford = state.resources.shinies >= 5;
-          const locked = !state.unlockedSchemes.includes(def.id);
+          const phaseOk = def.activePhases.includes(phase);
           return (
             <SchemeCard
               key={def.id}
-              id={def.id}
               name={def.name}
               description={def.description}
               chance={def.baseSuccessChance}
@@ -38,7 +42,9 @@ export function SchemesPanel() {
               rewardShiny={`${def.reward.shinies[0]}–${def.reward.shinies[1]}`}
               rewardSecret={`${def.reward.secrets[0]}–${def.reward.secrets[1]}`}
               remaining={remaining}
-              locked={locked}
+              phaseOk={phaseOk}
+              activePhases={def.activePhases}
+              phase={phase}
               canAfford={canAfford}
               onStart={() => startScheme(def.id)}
             />
@@ -50,7 +56,6 @@ export function SchemesPanel() {
 }
 
 interface SchemeCardProps {
-  id: SchemeId;
   name: string;
   description: string;
   chance: number;
@@ -58,7 +63,9 @@ interface SchemeCardProps {
   rewardShiny: string;
   rewardSecret: string;
   remaining: number | null;
-  locked: boolean;
+  phaseOk: boolean;
+  activePhases: DayPhase[];
+  phase: DayPhase;
   canAfford: boolean;
   onStart: () => void;
 }
@@ -71,15 +78,27 @@ function SchemeCard({
   rewardShiny,
   rewardSecret,
   remaining,
-  locked,
+  phaseOk,
+  activePhases,
+  phase,
   canAfford,
   onStart,
 }: SchemeCardProps) {
   const isRunning = remaining !== null;
-  const disabled = isRunning || locked || !canAfford;
+  const disabled = isRunning || !phaseOk || !canAfford;
+
+  const phaseHint = phaseOk
+    ? null
+    : `Only at ${activePhases.map((p) => p.toLowerCase()).join(" / ")} — current hour: ${phase}`;
 
   return (
-    <article className="flex flex-col gap-2 rounded border border-crow-ash bg-crow-ink/50 p-4 transition hover:border-crow-crowblue/60">
+    <article
+      className={`flex flex-col gap-2 rounded border p-4 transition ${
+        phaseOk
+          ? "border-crow-ash bg-crow-ink/50 hover:border-crow-crowblue/60"
+          : "border-crow-ash/40 bg-crow-ink/20 opacity-60"
+      }`}
+    >
       <header className="flex items-start justify-between gap-2">
         <h3 className="font-serif text-lg leading-snug text-crow-bone">{name}</h3>
         {isRunning ? (
@@ -99,16 +118,19 @@ function SchemeCard({
           {rewardShiny} ✦ &nbsp; {rewardSecret} ☽
         </dd>
       </dl>
+      {phaseHint ? (
+        <p className="text-[11px] italic text-crow-owl/80">{phaseHint}</p>
+      ) : null}
       <button
         type="button"
         onClick={onStart}
         disabled={disabled}
         className="mt-2 rounded border border-crow-rust/60 bg-crow-rust/10 px-3 py-1.5 text-sm text-crow-bone transition hover:bg-crow-rust/30 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-crow-rust/10"
       >
-        {locked
-          ? "Locked"
-          : isRunning
-            ? "Underway"
+        {isRunning
+          ? "Underway"
+          : !phaseOk
+            ? "Wrong hour"
             : !canAfford
               ? "Need 5 ✦"
               : "Dispatch"}

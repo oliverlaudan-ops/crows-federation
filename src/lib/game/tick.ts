@@ -3,14 +3,16 @@
  *
  * Runs in the browser via the React effect in the root page. Each tick:
  *   - Adds passive resources (per crow)
- *   - Decays owl ire slowly
- *   - Checks for completed schemes
+ *   - Decays owl ire (faster by day, slower at night)
+ *   - Possibly auto-strikes the owl at night
+ *   - Resolves completed schemes using the *current* world phase
  */
 
 import type { GameState } from "./save";
 import { add as addResource, passiveRate } from "./resources";
 import { schemes as schemeDefs, resolve as resolveScheme, type SchemeResult, type ActiveScheme } from "./schemes";
-import { tickOwl, owlStrikeSeverity } from "./owl";
+import { tickOwl, owlStrikeChance, owlStrikeSeverity } from "./owl";
+import { currentPhase, type DayPhase } from "./time";
 
 export interface TickResult {
   next: GameState;
@@ -34,8 +36,12 @@ export function tick(
   let next: GameState = { ...state };
   const events: GameEvent[] = [];
 
-  // 1. Passive resource income
-  const rate = passiveRate(next.flock.total);
+  const phase: DayPhase = currentPhase(state.world);
+
+  // 1. Passive resource income — slightly better at dusk/night (the federation's hour)
+  const baseRate = passiveRate(next.flock.total);
+  const rateMul = phase === "day" ? 1 : phase === "dusk" || phase === "dawn" ? 1.15 : 1.3;
+  const rate = { shinies: baseRate.shinies * rateMul, secrets: baseRate.secrets * rateMul };
   const seconds = elapsedMs / 1000;
   next = {
     ...next,
@@ -46,24 +52,26 @@ export function tick(
     resources: addResource(next.resources, "secrets", rate.secrets * seconds),
   };
 
-  // 2. Owl ire decay
-  next = { ...next, owl: tickOwl(next.owl, elapsedMs) };
+  // 2. Owl ire decay — faster by day, slower at night
+  next = { ...next, owl: tickOwl(next.owl, elapsedMs, phase) };
 
-  // 3. Owl auto-strike if ire is at max
-  if (next.owl.phase === "striking" && !next.owl.defeated) {
-    // Each tick the owl may carry off a crow. Heavy penalty — drives action.
-    const severity = owlStrikeSeverity(next.owl);
-    if (severity > 0 && rand() < 0.1) {
-      events.push({ kind: "owl_strike", crowsLost: severity });
+  // 3. Owl auto-strike — more likely at night when he's awake
+  if (!next.owl.defeated) {
+    const strikeChance = owlStrikeChance(next.owl, phase);
+    if (strikeChance > 0 && rand() < strikeChance) {
+      const severity = owlStrikeSeverity(next.owl);
+      if (severity > 0) {
+        events.push({ kind: "owl_strike", crowsLost: severity });
+      }
     }
   }
 
-  // 4. Resolve completed schemes
+  // 4. Resolve completed schemes — use the phase *at the moment of resolution*
   const stillRunning: RunningScheme[] = [];
   for (const active of running) {
     if (Date.now() >= active.completesAt) {
       const def = schemeDefs[active.id];
-      const result = resolveScheme(def, active, rand);
+      const result = resolveScheme(def, active, phase, rand);
       events.push({ kind: "scheme_complete", result });
       next = {
         ...next,
@@ -79,7 +87,6 @@ export function tick(
           resources: addResource(next.resources, "secrets", result.reward.secrets),
         };
       }
-      // Crows lost on failure handled by the event consumer
     } else {
       stillRunning.push(active);
     }

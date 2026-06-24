@@ -8,6 +8,7 @@ import {
   schemeStartCost,
   type SchemeId,
 } from "@/lib/game/schemes";
+import { currentPhase } from "@/lib/game/time";
 import {
   initialResources,
   spend as spendResource,
@@ -110,6 +111,9 @@ export const useGame = create<Store>((set, get) => ({
     const { state } = get();
     const def = schemeDefs[id];
     if (!state.unlockedSchemes.includes(id)) return false;
+    // Phase gate — can't start nocturnal schemes by day
+    const phase = currentPhase(state.world);
+    if (!def.activePhases.includes(phase)) return false;
     const cost = schemeStartCost(def, extraInvestment);
     const after = spendResource(state.resources, "shinies", cost);
     if (!after) return false;
