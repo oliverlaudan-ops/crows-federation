@@ -17,6 +17,10 @@
 .DS_Store
 *.pem
 
+# public assets
+/public/.gitkeep
+!/.gitkeep
+
 # debug
 npm-debug.log*
 yarn-debug.log*

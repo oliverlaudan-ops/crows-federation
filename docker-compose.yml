@@ -6,14 +6,9 @@ services:
     image: oliverlaudan-ops/crows-federation:latest
     container_name: crows-federation
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:3002:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
       - HOSTNAME=0.0.0.0
-    networks:
-      - web
-
-networks:
-  web:
-    name: web
-    external: true
