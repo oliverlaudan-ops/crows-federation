@@ -9,7 +9,8 @@ export type SchemeId =
   | "steal_pennies"      // From a blind man's cup
   | "raid_picnic"        // Picnic baskets in the meadow
   | "haunt_belfry"       // Drive the bats from the bell tower
-  | "steal_owl_egg";     // RISKY — costs many shinies, may summon the owl
+  | "steal_owl_egg"     // RISKY — costs many shinies, may summon the owl
+  | "confront_owl";     // ENDGAME — only with belfry corruption, at night
 
 export interface SchemeDefinition {
   id: SchemeId;
@@ -28,6 +29,10 @@ export interface SchemeDefinition {
   activePhases: import("./time").DayPhase[];
   /** Bonus applied to success chance during the *primary* (best) phase. */
   primaryPhaseBonus?: number;
+  /** True if this scheme resolves the owl (used to gate UI + decide victory) */
+  isEndgame?: boolean;
+  /** If true, a successful run increments belfry corruption (0..3) */
+  buildsBelfryCorruption?: boolean;
 }
 
 export const schemes: Record<SchemeId, SchemeDefinition> = {
@@ -66,6 +71,7 @@ export const schemes: Record<SchemeId, SchemeDefinition> = {
     baseSuccessChance: 0.55,
     activePhases: ["dusk", "night", "dawn"],
     primaryPhaseBonus: 0.1,
+    buildsBelfryCorruption: true,
   },
   steal_owl_egg: {
     id: "steal_owl_egg",
@@ -79,6 +85,21 @@ export const schemes: Record<SchemeId, SchemeDefinition> = {
     baseSuccessChance: 0.35,
     activePhases: ["night"],
     primaryPhaseBonus: 0.1,
+  },
+  confront_owl: {
+    id: "confront_owl",
+    name: "Confront the Owl in the Belfry",
+    description:
+      "The belfry is ours. The Owl knows it. Tonight, one of us must fall.",
+    unlockCost: { secrets: 10 },
+    baseDurationMs: 300_000, // 5 minutes
+    reward: { shinies: [3000, 6000], secrets: [60, 120] },
+    failurePenalty: 5,        // 5 crows lost on failure
+    baseSuccessChance: 0.3,
+    activePhases: ["night"],
+    primaryPhaseBonus: 0.05,
+    /** Extra context — this scheme resolves the owl */
+    isEndgame: true,
   },
 };
 

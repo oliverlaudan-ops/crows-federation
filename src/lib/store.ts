@@ -1,7 +1,13 @@
 "use client";
 
 import { create } from "zustand";
-import { initialState, type GameState, save, load, reset } from "@/lib/game/save";
+import {
+  initialState,
+  type GameState,
+  save,
+  load,
+  reset,
+} from "@/lib/game/save";
 import { tick, type RunningScheme, type GameEvent } from "@/lib/game/tick";
 import {
   schemes as schemeDefs,
@@ -30,11 +36,17 @@ interface Store {
   /** Recruit new crows by spending shinies (10 = 1 crow) */
   recruitCrows: () => void;
 
-  /** Start a scheme if affordable & unlocked */
+  /** Start a scheme if affordable & unlocked & at the right hour */
   startScheme: (id: SchemeId, extraInvestment?: number) => boolean;
 
   /** Reset everything (debug / new game) */
   newGame: () => void;
+
+  /**
+   * Begin a new cycle after defeating the owl.
+   * Resets most state, keeps +1% prestige bonus per owl slain.
+   */
+  newCycle: () => void;
 
   /** Clear the event queue after the UI has rendered them */
   clearEvents: () => void;
@@ -44,6 +56,7 @@ interface Store {
 }
 
 const TICK_MS = 500;
+const CONFRONT_UNLOCK_CORRUPTION = 3;
 
 export const useGame = create<Store>((set, get) => ({
   state: initialState(),
@@ -64,7 +77,6 @@ export const useGame = create<Store>((set, get) => ({
   pulse: (elapsedMs) => {
     const { state, running } = get();
     const { next, events } = tick(state, running, elapsedMs);
-    // Apply owl strikes immediately
     let withStrikes = next;
     for (const ev of events) {
       if (ev.kind === "owl_strike") {
@@ -81,15 +93,10 @@ export const useGame = create<Store>((set, get) => ({
         };
       }
     }
-    // Remove completed schemes from running list
-    const stillRunning = running.filter(
-      (r) => Date.now() < r.completesAt,
-    );
+    const stillRunning = running.filter((r) => Date.now() < r.completesAt);
     set({ state: withStrikes, running: stillRunning, events });
     save(withStrikes);
   },
-
-  clearEvents: () => set({ events: [] }),
 
   recruitCrows: () => {
     const { state } = get();
@@ -111,9 +118,13 @@ export const useGame = create<Store>((set, get) => ({
     const { state } = get();
     const def = schemeDefs[id];
     if (!state.unlockedSchemes.includes(id)) return false;
-    // Phase gate — can't start nocturnal schemes by day
     const phase = currentPhase(state.world);
     if (!def.activePhases.includes(phase)) return false;
+    // Endgame scheme has an extra unlock condition
+    if (def.isEndgame) {
+      if (state.owl.defeated) return false;
+      if (state.belfryCorruption < CONFRONT_UNLOCK_CORRUPTION) return false;
+    }
     const cost = schemeStartCost(def, extraInvestment);
     const after = spendResource(state.resources, "shinies", cost);
     if (!after) return false;
@@ -142,12 +153,30 @@ export const useGame = create<Store>((set, get) => ({
     });
   },
 
+  newCycle: () => {
+    const { state } = get();
+    // Add +1% passive income per owl slain, keep it.
+    const prestigeBonus = 1 + 0.01 * state.owlSlainCount;
+    // Reset everything except prestige.
+    set({
+      state: {
+        ...initialState(),
+        prestigeBonus,
+        owlSlainCount: state.owlSlainCount,
+      },
+      running: [],
+      events: [],
+    });
+    save(get().state);
+  },
+
+  clearEvents: () => set({ events: [] }),
+
   persist: () => {
     save(get().state);
   },
 }));
 
-/** Heartbeat — drives the passive game loop */
 export function startHeartbeat(): () => void {
   if (typeof window === "undefined") return () => undefined;
   const handle = window.setInterval(() => {
@@ -157,4 +186,4 @@ export function startHeartbeat(): () => void {
 }
 
 // Re-exports for UI convenience
-export { schemeDefs, angerOwl, defeatOwl, initialResources };
+export { schemeDefs, angerOwl, defeatOwl, initialResources, CONFRONT_UNLOCK_CORRUPTION };

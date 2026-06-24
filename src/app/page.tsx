@@ -7,6 +7,7 @@ import { OwlPanel } from "@/components/OwlPanel";
 import { RecruitPanel } from "@/components/RecruitPanel";
 import { EventLog } from "@/components/EventLog";
 import { WorldBackground } from "@/components/WorldBackground";
+import { VictoryModal } from "@/components/VictoryModal";
 
 export default function HomePage() {
   return (
@@ -44,7 +45,7 @@ export default function HomePage() {
 
       <footer className="relative z-10 border-t border-crow-ash">
         <div className="mx-auto max-w-5xl px-6 py-6 text-center text-xs text-crow-boneDim">
-          v0.2 — day/night cycle · <a
+          v0.3 — endgame + belfry corruption · <a
             href="https://github.com/oliverlaudan-ops/crows-federation"
             className="underline hover:text-crow-bone"
           >
@@ -52,6 +53,7 @@ export default function HomePage() {
           </a>
         </div>
       </footer>
+      <VictoryModal />
     </main>
   );
 }

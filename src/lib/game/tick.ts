@@ -5,13 +5,15 @@
  *   - Adds passive resources (per crow)
  *   - Decays owl ire (faster by day, slower at night)
  *   - Possibly auto-strikes the owl at night
- *   - Resolves completed schemes using the *current* world phase
+ *   - Resolves completed schemes, gating on world phase
+ *   - Bumps belfry corruption on successful belfry runs
+ *   - Defeats the owl on a successful Confront scheme
  */
 
 import type { GameState } from "./save";
 import { add as addResource, passiveRate } from "./resources";
 import { schemes as schemeDefs, resolve as resolveScheme, type SchemeResult, type ActiveScheme } from "./schemes";
-import { tickOwl, owlStrikeChance, owlStrikeSeverity } from "./owl";
+import { tickOwl, owlStrikeChance, owlStrikeSeverity, defeatOwl } from "./owl";
 import { currentPhase, type DayPhase } from "./time";
 
 export interface TickResult {
@@ -21,11 +23,15 @@ export interface TickResult {
 
 export type GameEvent =
   | { kind: "scheme_complete"; result: SchemeResult }
-  | { kind: "owl_strike"; crowsLost: number };
+  | { kind: "owl_strike"; crowsLost: number }
+  | { kind: "owl_slain" }
+  | { kind: "belfry_corrupted"; level: number };
 
 export interface RunningScheme extends ActiveScheme {
   definition: import("./schemes").SchemeDefinition;
 }
+
+const MAX_BELFRY_CORRUPTION = 3;
 
 export function tick(
   state: GameState,
@@ -40,8 +46,17 @@ export function tick(
 
   // 1. Passive resource income — slightly better at dusk/night (the federation's hour)
   const baseRate = passiveRate(next.flock.total);
-  const rateMul = phase === "day" ? 1 : phase === "dusk" || phase === "dawn" ? 1.15 : 1.3;
-  const rate = { shinies: baseRate.shinies * rateMul, secrets: baseRate.secrets * rateMul };
+  const rateMul =
+    phase === "day"
+      ? 1
+      : phase === "dusk" || phase === "dawn"
+        ? 1.15
+        : 1.3;
+  // Apply permanent prestige bonus on top
+  const rate = {
+    shinies: baseRate.shinies * rateMul * next.prestigeBonus,
+    secrets: baseRate.secrets * rateMul * next.prestigeBonus,
+  };
   const seconds = elapsedMs / 1000;
   next = {
     ...next,
@@ -66,7 +81,7 @@ export function tick(
     }
   }
 
-  // 4. Resolve completed schemes — use the phase *at the moment of resolution*
+  // 4. Resolve completed schemes
   const stillRunning: RunningScheme[] = [];
   for (const active of running) {
     if (Date.now() >= active.completesAt) {
@@ -86,6 +101,24 @@ export function tick(
           ...next,
           resources: addResource(next.resources, "secrets", result.reward.secrets),
         };
+        // Build belfry corruption on successful haunt
+        if (def.buildsBelfryCorruption && next.belfryCorruption < MAX_BELFRY_CORRUPTION) {
+          const newLevel = next.belfryCorruption + 1;
+          next = { ...next, belfryCorruption: newLevel };
+          events.push({ kind: "belfry_corrupted", level: newLevel });
+        }
+        // Defeat the owl on a successful Confront
+        if (def.isEndgame) {
+          next = {
+            ...next,
+            owl: defeatOwl(next.owl),
+            owlSlainCount: next.owlSlainCount + 1,
+          };
+          events.push({ kind: "owl_slain" });
+        }
+      } else if (def.isEndgame) {
+        // Failed Confront resets corruption — the federation was driven out
+        next = { ...next, belfryCorruption: 0 };
       }
     } else {
       stillRunning.push(active);

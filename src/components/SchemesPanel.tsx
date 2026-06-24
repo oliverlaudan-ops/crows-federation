@@ -10,9 +10,13 @@ export function SchemesPanel() {
   const running = useGame((s) => s.running);
   const startScheme = useGame((s) => s.startScheme);
 
-  const entries = (Object.values(schemeDefs) as Array<typeof schemeDefs[SchemeId]>).filter((s) =>
-    state.unlockedSchemes.includes(s.id),
-  );
+  const entries = (Object.values(schemeDefs) as Array<typeof schemeDefs[SchemeId]>).filter((s) => {
+    // Unlocked if in unlockedSchemes, OR if it's the endgame scheme and
+    // the player has built enough belfry corruption to attempt it.
+    if (state.unlockedSchemes.includes(s.id)) return true;
+    if (s.isEndgame) return state.belfryCorruption >= 3;
+    return false;
+  });
 
   // We re-derive the phase from the world clock — same source of truth.
   // (Reading it on every render keeps the cards in sync with the WorldClock.)
@@ -32,6 +36,8 @@ export function SchemesPanel() {
           const remaining = active ? active.completesAt - Date.now() : null;
           const canAfford = state.resources.shinies >= 5;
           const phaseOk = def.activePhases.includes(phase);
+          const corruptionOk = !def.isEndgame || state.belfryCorruption >= 3;
+          const owlAlive = !def.isEndgame || !state.owl.defeated;
           return (
             <SchemeCard
               key={def.id}
@@ -46,6 +52,10 @@ export function SchemesPanel() {
               activePhases={def.activePhases}
               phase={phase}
               canAfford={canAfford}
+              corruptionOk={corruptionOk}
+              belfryCorruption={state.belfryCorruption}
+              owlAlive={owlAlive}
+              isEndgame={Boolean(def.isEndgame)}
               onStart={() => startScheme(def.id)}
             />
           );
@@ -67,6 +77,10 @@ interface SchemeCardProps {
   activePhases: DayPhase[];
   phase: DayPhase;
   canAfford: boolean;
+  corruptionOk: boolean;
+  belfryCorruption: number;
+  owlAlive: boolean;
+  isEndgame: boolean;
   onStart: () => void;
 }
 
@@ -82,25 +96,48 @@ function SchemeCard({
   activePhases,
   phase,
   canAfford,
+  corruptionOk,
+  belfryCorruption,
+  owlAlive,
+  isEndgame,
   onStart,
 }: SchemeCardProps) {
   const isRunning = remaining !== null;
-  const disabled = isRunning || !phaseOk || !canAfford;
+  const disabled = isRunning || !phaseOk || !canAfford || !corruptionOk || !owlAlive;
 
   const phaseHint = phaseOk
     ? null
     : `Only at ${activePhases.map((p) => p.toLowerCase()).join(" / ")} — current hour: ${phase}`;
 
+  const corruptionHint =
+    isEndgame && !corruptionOk
+      ? `Requires belfry corruption 3/3 — currently ${belfryCorruption}/3`
+      : null;
+
+  const owlDeadHint = isEndgame && !owlAlive ? "The owl is already slain." : null;
+
+  const borderAccent = isEndgame
+    ? "border-crow-owl/40 hover:border-crow-owl"
+    : phaseOk
+      ? "border-crow-ash hover:border-crow-crowblue/60"
+      : "border-crow-ash/40";
+  const bgAccent = isEndgame
+    ? "bg-crow-ink/70"
+    : phaseOk
+      ? "bg-crow-ink/50"
+      : "bg-crow-ink/20 opacity-60";
+
   return (
     <article
-      className={`flex flex-col gap-2 rounded border p-4 transition ${
-        phaseOk
-          ? "border-crow-ash bg-crow-ink/50 hover:border-crow-crowblue/60"
-          : "border-crow-ash/40 bg-crow-ink/20 opacity-60"
-      }`}
+      className={`flex flex-col gap-2 rounded border p-4 transition ${borderAccent} ${bgAccent}`}
     >
       <header className="flex items-start justify-between gap-2">
         <h3 className="font-serif text-lg leading-snug text-crow-bone">{name}</h3>
+        {isEndgame ? (
+          <span className="shrink-0 rounded border border-crow-owl/60 bg-crow-owl/10 px-2 py-0.5 text-[10px] uppercase tracking-widest text-crow-owl">
+            Endgame
+          </span>
+        ) : null}
         {isRunning ? (
           <span className="shrink-0 rounded bg-crow-crowblue/20 px-2 py-0.5 text-xs text-crow-crowblue">
             {formatDuration(remaining ?? 0)}
@@ -121,6 +158,12 @@ function SchemeCard({
       {phaseHint ? (
         <p className="text-[11px] italic text-crow-owl/80">{phaseHint}</p>
       ) : null}
+      {corruptionHint ? (
+        <p className="text-[11px] italic text-crow-blood/90">{corruptionHint}</p>
+      ) : null}
+      {owlDeadHint ? (
+        <p className="text-[11px] italic text-crow-boneDim">{owlDeadHint}</p>
+      ) : null}
       <button
         type="button"
         onClick={onStart}
@@ -129,11 +172,15 @@ function SchemeCard({
       >
         {isRunning
           ? "Underway"
-          : !phaseOk
-            ? "Wrong hour"
-            : !canAfford
-              ? "Need 5 ✦"
-              : "Dispatch"}
+          : !owlAlive
+            ? "Owl is slain"
+            : !corruptionOk
+              ? "Belfry not yet ours"
+              : !phaseOk
+                ? "Wrong hour"
+                : !canAfford
+                  ? "Need 5 ✦"
+                  : "Dispatch"}
       </button>
     </article>
   );
