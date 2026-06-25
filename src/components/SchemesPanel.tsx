@@ -9,14 +9,9 @@ export function SchemesPanel() {
   const state = useGame((s) => s.state);
   const running = useGame((s) => s.running);
   const startScheme = useGame((s) => s.startScheme);
+  const unlockScheme = useGame((s) => s.unlockScheme);
 
-  const entries = (Object.values(schemeDefs) as Array<typeof schemeDefs[SchemeId]>).filter((s) => {
-    // Unlocked if in unlockedSchemes, OR if it's the endgame scheme and
-    // the player has built enough belfry corruption to attempt it.
-    if (state.unlockedSchemes.includes(s.id)) return true;
-    if (s.isEndgame) return state.belfryCorruption >= 3;
-    return false;
-  });
+  const entries = (Object.values(schemeDefs) as Array<typeof schemeDefs[SchemeId]>);
 
   // We re-derive the phase from the world clock — same source of truth.
   // (Reading it on every render keeps the cards in sync with the WorldClock.)
@@ -32,6 +27,26 @@ export function SchemesPanel() {
       </header>
       <div className="grid gap-3 md:grid-cols-2">
         {entries.map((def) => {
+          // Endgame scheme has its own belfry-corruption gate; otherwise the
+          // unlocked list controls visibility. Steal_pennies & raid_picnic
+          // start unlocked; everything else must be bought with secrets.
+          const isUnlocked =
+            state.unlockedSchemes.includes(def.id) ||
+            (def.isEndgame && state.belfryCorruption >= 3);
+          if (!isUnlocked) {
+            return (
+              <LockedSchemeCard
+                key={def.id}
+                name={def.name}
+                description={def.description}
+                unlockCost={def.unlockCost.secrets}
+                haveSecrets={Math.floor(state.resources.secrets)}
+                canAfford={state.resources.secrets >= def.unlockCost.secrets}
+                isEndgame={Boolean(def.isEndgame)}
+                onUnlock={() => unlockScheme(def.id)}
+              />
+            );
+          }
           const active = running.find((r) => r.id === def.id);
           const remaining = active ? active.completesAt - Date.now() : null;
           const canAfford = state.resources.shinies >= 5;
@@ -62,6 +77,51 @@ export function SchemesPanel() {
         })}
       </div>
     </section>
+  );
+}
+
+interface LockedSchemeCardProps {
+  name: string;
+  description: string;
+  unlockCost: number;
+  haveSecrets: number;
+  canAfford: boolean;
+  isEndgame: boolean;
+  onUnlock: () => void;
+}
+
+function LockedSchemeCard({
+  name,
+  description,
+  unlockCost,
+  haveSecrets,
+  canAfford,
+  isEndgame,
+  onUnlock,
+}: LockedSchemeCardProps) {
+  const label = isEndgame ? "Endgame" : "Locked";
+  return (
+    <article className="flex flex-col gap-2 rounded border border-crow-ash/40 bg-crow-ink/20 p-4 opacity-70">
+      <header className="flex items-start justify-between gap-2">
+        <h3 className="font-serif text-lg leading-snug text-crow-boneDim">{name}</h3>
+        <span className="shrink-0 rounded border border-crow-ash/60 px-2 py-0.5 text-[10px] uppercase tracking-widest text-crow-boneDim">
+          {label}
+        </span>
+      </header>
+      <p className="text-sm italic text-crow-boneDim/80">{description}</p>
+      <p className="text-xs text-crow-boneDim">
+        Unlock cost: <span className="text-crow-blood">{unlockCost} ☽</span>
+        <span className="ml-2 text-crow-boneDim/70">(you have {haveSecrets} ☽)</span>
+      </p>
+      <button
+        type="button"
+        onClick={onUnlock}
+        disabled={!canAfford}
+        className="mt-2 rounded border border-crow-ash bg-crow-ash/30 px-3 py-1.5 text-sm text-crow-bone transition hover:bg-crow-ash/50 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-crow-ash/30"
+      >
+        {canAfford ? "Unlock" : `Need ${unlockCost - haveSecrets} more ☽`}
+      </button>
+    </article>
   );
 }
 

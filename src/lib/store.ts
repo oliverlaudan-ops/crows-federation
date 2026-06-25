@@ -39,6 +39,13 @@ interface Store {
   /** Start a scheme if affordable & unlocked & at the right hour */
   startScheme: (id: SchemeId, extraInvestment?: number) => boolean;
 
+  /**
+   * Unlock a locked scheme by spending secrets.
+   * Returns true on success, false if already unlocked or not enough secrets
+   * (or the scheme id is unknown).
+   */
+  unlockScheme: (id: SchemeId) => boolean;
+
   /** Reset everything (debug / new game) */
   newGame: () => void;
 
@@ -139,6 +146,27 @@ export const useGame = create<Store>((set, get) => ({
     set({
       state: { ...state, resources: after },
       running: [...get().running, active],
+    });
+    save(get().state);
+    return true;
+  },
+
+  unlockScheme: (id) => {
+    const { state } = get();
+    const def = schemeDefs[id];
+    if (!def) return false;
+    if (state.unlockedSchemes.includes(id)) return false;
+    // Endgame scheme is gated by belfry corruption, not secrets — refuse here.
+    if (def.isEndgame) return false;
+    const cost = def.unlockCost.secrets;
+    const after = spendResource(state.resources, "secrets", cost);
+    if (!after) return false;
+    set({
+      state: {
+        ...state,
+        resources: after,
+        unlockedSchemes: [...state.unlockedSchemes, id],
+      },
     });
     save(get().state);
     return true;
