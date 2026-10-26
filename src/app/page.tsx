@@ -52,7 +52,12 @@ export default function HomePage() {
             source
           </a>
         </div>
-      </footer>
+      <nav aria-label="Rechtliche Hinweise" lang="de" className="mt-3 flex flex-wrap justify-center gap-3 text-xs">
+<a className="underline" href="https://future-pulse.de/spiele-rechtliches/#impressum" target="_blank" rel="noopener noreferrer">Impressum</a>
+<a className="underline" href="https://future-pulse.de/spiele-rechtliches/#datenschutz" target="_blank" rel="noopener noreferrer">Datenschutz</a>
+<a className="underline" href="https://future-pulse.de/spiele-rechtliches/#lizenzen" target="_blank" rel="noopener noreferrer">Lizenzen</a>
+</nav>
+</footer>
       <VictoryModal />
     </main>
   );
